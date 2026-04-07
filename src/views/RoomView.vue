@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { db } from '../firebase'
 import { 
@@ -11,6 +11,28 @@ const route = useRoute()
 const roomId = route.params.id
 const newIdea = ref('')
 const ideas = ref([])
+const currentIndex = ref(1)
+const currentKing = ref(null)
+
+const startBattle = () => {
+    if (ideas.value.length < 2) return
+    currentKing.value = ideas.value[0]
+    currentIndex.value = 1
+}
+
+const selectWinner = async (winner) => {
+    await vote(winner.id)
+    currentKing.value = winner
+    if (currentIndex.value < ideas.value.length - 1) {
+        currentIndex.value++
+    } else {
+        alert("ผู้ชนะคือ " + currentKing.value.text)
+    }
+}
+
+const challenger = computed(() => {
+    return ideas.value[currentIndex.value] || null
+})
 
 const addIdea = async () => {
     if (newIdea.value.trim() === '') return
@@ -19,7 +41,7 @@ const addIdea = async () => {
         await addDoc(ideasCollection, {
             text: newIdea.value,
             votes: 0,
-            createAt: serverTimestamp()
+            createdAt: serverTimestamp()
         })
         newIdea.value = ''
         console.log("Idea added")
