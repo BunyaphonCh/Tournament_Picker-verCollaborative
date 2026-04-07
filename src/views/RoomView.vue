@@ -22,7 +22,7 @@ const startBattle = () => {
 }
 
 const selectWinner = async (winner) => {
-    const ideaRef = doc(db, "rooms", roomId, "ideas")
+    const ideaRef = doc(db, "rooms", roomId, "ideas", winner.id)
     await updateDoc(ideaRef, {
         votes: increment(1)
     })
