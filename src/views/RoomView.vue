@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { db } from '../firebase'
+import { deleteDoc, getDocs } from 'firebase/firestore'
 import { 
     collection, addDoc, onSnapshot, query, updateDoc,
     doc, increment, serverTimestamp, orderBy
@@ -64,6 +65,18 @@ onMounted(() => {
     })
 })
 
+const resetRoom = async() => {
+    if (!confirm("คุณต้องการลบทั้งหมดใช่ไหม")) return
+    const ideasCollection = collection(db, "rooms", roomId, "ideas")
+    const snapshot = await getDocs(ideasCollection)
+
+    const deletePromises = snapshot.docs.map(document => deleteDoc(doc(db, "rooms", roomId, "ideas", document.id)))
+    await Promise.all(deletePromises)
+
+    currentKing.value = null
+    currentIndex.value = 1
+}
+
 </script>
 
 <template>
@@ -92,6 +105,9 @@ onMounted(() => {
             class="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl font-black text-xl shadow-lg hover:from-green-400 hover:to-emerald-500 transition-all transform hover:scale-[1.02]"
           >
             START VERSUS MODE
+          </button>
+          <button @click="resetRoom" class="mt-4 text-red-500 text-sm underline block w-full text-center">
+            Reset All Ideas
           </button>
         </div>
 
