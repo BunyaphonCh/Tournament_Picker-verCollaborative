@@ -1,219 +1,204 @@
-<script setup>
-import { ref, onMounted, computed } from 'vue'
-import { useRoute } from 'vue-router'
-import { db } from '../firebase'
-import { deleteDoc, getDocs } from 'firebase/firestore'
-import { 
-    collection, addDoc, onSnapshot, query, updateDoc,
-    doc, increment, serverTimestamp, orderBy, getDoc, setDoc
-} from 'firebase/firestore'
-
-const route = useRoute()
-const roomId = route.params.id
-const newIdea = ref('')
-const ideas = ref([])
-const currentIndex = ref(1)
-const currentKing = ref(null)
-const roomData = ref({ participants: 0, status: 'open' })
-
-const updateParticipants = async () => {
-    const roomRef = doc(db, "rooms", roomId)
-    await setDoc(roomRef, {
-        participants: increment(1)
-    }, { merge: true })
-}
-
-onMounted(() => {
-    updateParticipants()
-
-    onSnapshot(doc(db, "rooms", roomId), (doc) => {
-        if (doc.exists()) {
-            roomData.value = doc.data()
-        }
-    })
-
-    const q = query(
-        collection(db, "rooms", roomId, "ideas"),
-        orderBy("createdAt", "asc")
-    )
-    onSnapshot(q, (snapshot) => {
-        ideas.value = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data()}))
-    })
-})
-
-const finishGame = async () => {
-    const roomRef = doc(db, "rooms", roomId)
-    await updateDoc(roomRef, { status: 'finished' })
-}
-
-const startBattle = () => {
-    if (ideas.value.length < 2) return
-    currentKing.value = ideas.value[0]
-    currentIndex.value = 1
-}
-
-const selectWinner = async (winner) => {
-    const ideaRef = doc(db, "rooms", roomId, "ideas", winner.id)
-    await updateDoc(ideaRef, {
-        votes: increment(1)
-    })
-    currentKing.value = winner
-    if (currentIndex.value < ideas.value.length - 1) {
-        currentIndex.value++
-    } else {
-        currentIndex.value++
-    }
-}
-
-const challenger = computed(() => {
-    return ideas.value[currentIndex.value] || null
-})
-
-const addIdea = async () => {
-    if (newIdea.value.trim() === '') return
-    try {
-        const ideasCollection = collection(db, "rooms", roomId, "ideas")
-        await addDoc(ideasCollection, {
-            text: newIdea.value,
-            votes: 0,
-            createdAt: serverTimestamp()
-        })
-        newIdea.value = ''
-        console.log("Idea added")
-    } catch (error) {
-        console.error("Error adding idea: ", error)
-        alert("ส่งข้อมูลไม่สำเร็จ เช็ค Firebase")
-    }
-}
-
-onMounted(() => {
-    const q = query(
-        collection(db, "rooms", roomId, "ideas"),
-        orderBy("createdAt", "asc")
-    )
-    onSnapshot(q, (snapshot) => {
-        ideas.value = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data()}))
-    })
-})
-
-const resetRoom = async() => {
-    if (!confirm("คุณต้องการลบทั้งหมดใช่ไหม")) return
-    const ideasCollection = collection(db, "rooms", roomId, "ideas")
-    const snapshot = await getDocs(ideasCollection)
-
-    const deletePromises = snapshot.docs.map(document => deleteDoc(doc(db, "rooms", roomId, "ideas", document.id)))
-    await Promise.all(deletePromises)
-
-    currentKing.value = null
-    currentIndex.value = 1
-}
-
-</script>
-
 <template>
-  <div class="min-h-screen bg-slate-900 text-white p-6">
-    <header class="flex justify-between items-start mb-10 max-w-2xl mx-auto w-full">
-      <div>
-        <h2 class="text-xl font-mono text-blue-400"># {{ roomId }}</h2>
-        <p class="text-xs text-slate-500">👥 {{ roomData.participants || 0 }} participants joined</p>
-      </div>
-      <router-link to="/" class="text-sm text-slate-400 hover:text-white underline">Leave Room</router-link>
-    </header>
-
+  <div class="min-h-screen bg-[#81D8D0] p-6 font-sans text-slate-900 transition-colors duration-500">
     <div class="max-w-2xl mx-auto">
       
-      <div v-if="!currentKing && roomData.status !== 'finished'">
-        <div class="flex gap-2 mb-8">
-          <input
-            v-model="newIdea"
-            @keyup.enter="addIdea"
-            class="flex-1 p-3 bg-slate-800 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500"
-            placeholder="Suggest an idea..."
-          />
-          <button @click="addIdea" class="px-6 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg font-bold transition">+</button>
-        </div>
-
-        <div v-if="ideas.length >= 2" class="mb-10 text-center">
-          <button 
-            @click="startBattle" 
-            class="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl font-black text-xl shadow-lg hover:from-green-400 hover:to-emerald-500 transition-all transform hover:scale-[1.02]"
-          >
-            START VERSUS MODE
-          </button>
-          <button @click="resetRoom" class="mt-4 text-red-500 text-xs opacity-50 hover:opacity-100 underline block w-full text-center">
-            Reset All Ideas
+      <div v-if="!showSpotlight" class="flex gap-4 mb-8 items-start">
+        <button @click="$router.push('/')" 
+          class="border-[3px] border-black px-4 py-2 font-bold rounded-xl bg-white hover:bg-slate-100 transition-all shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-1 active:translate-y-1">
+          กลับหน้าหลัก
+        </button>
+        <div v-if="roomData.status === 'open'" class="flex-1 flex gap-2">
+          <input v-model="newIdea" @keyup.enter="addIdea" 
+            class="flex-1 border-[3px] border-black p-2 font-bold rounded-xl focus:outline-none" 
+            placeholder="เพิ่มตัวเลือก..." />
+          <button @click="addIdea" 
+            class="border-[3px] border-black px-6 py-2 font-bold bg-blue-400 rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-1 active:translate-y-1">
+            เพิ่ม
           </button>
         </div>
-
-        <div class="grid gap-4">
-          <div v-for="item in ideas" :key="item.id"
-            class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg italic text-slate-300">
-            "{{ item.text }}"
-          </div>
-        </div>
-        
-        <p v-if="ideas.length === 0" class="text-center text-slate-500 mt-10 italic">Waiting for ideas...</p>
       </div>
 
-      <div v-else-if="currentKing && challenger && roomData.status !== 'finished'" class="py-10">
-        <h2 class="text-center text-2xl font-black mb-10 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500 italic">
-          ROUND {{ currentIndex }}
-        </h2>
-        
-        <div class="flex flex-col gap-6 items-center justify-center">
+      <div v-if="roomData.status === 'open' && !showSpotlight">
+        <div class="flex gap-8 mb-8 font-bold text-slate-600 px-2 bg-white/50 p-4 rounded-2xl border-2 border-black/10">
+          <span>🚩 ตัวเลือก : {{ ideas.length }}</span>
+          <span>👥 คนโหวตแล้ว : {{ roomData.voteCount || 0 }}</span>
+        </div>
+
+        <div class="space-y-4 mb-10">
+          <div v-for="(item, idx) in ideas" :key="item.id" 
+            class="border-[3px] border-black p-4 flex justify-between items-center bg-white rounded-2xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
+            <span class="text-xl font-bold truncate pr-4">#{{ idx + 1 }} : {{ item.text }}</span>
+            <div class="flex gap-2 shrink-0">
+              <button @click="editIdea(item)" class="border-[2px] border-black px-4 py-1 font-bold text-sm rounded-lg bg-yellow-300">แก้ไข</button>
+              <button @click="deleteIdea(item.id)" class="border-[2px] border-black px-4 py-1 font-bold text-sm rounded-lg bg-red-400 text-white">ลบ</button>
+            </div>
+          </div>
+        </div>
+
+        <button v-if="ideas.length >= 2" @click="startBattle" 
+          class="w-full py-5 border-[4px] border-black font-black text-3xl rounded-2xl bg-green-400 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:translate-x-1 hover:translate-y-1 hover:shadow-none transition-all mb-6">
+          เริ่ม Battle!
+        </button>
+
+        <div v-if="isCreator" class="grid grid-cols-1 gap-4 mt-12 p-6 border-t-4 border-dashed border-black/20">
+          <button v-if="roomData.voteCount >= 1" @click="showGlobalResults = !showGlobalResults" 
+            class="w-full py-4 border-[3px] border-black font-bold text-xl rounded-2xl bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none transition-all">
+            {{ showGlobalResults ? 'ปิดหน้าผลโหวต' : 'ดูผลโหวตรวม' }}
+          </button>
+          <button @click="deleteRoom" 
+            class="w-full py-4 border-[3px] border-black font-bold text-xl rounded-2xl bg-red-500 text-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none transition-all">
+            ลบห้องโหวตนี้
+          </button>
+        </div>
+
+        <div v-if="showGlobalResults" class="mt-8 p-6 border-[4px] border-black bg-white rounded-3xl shadow-[10px_10px_0px_0px_rgba(0,0,0,0.2)]">
+            <h3 class="text-2xl font-black mb-6 text-center underline italic">VOTE RANKING</h3>
+            <div class="space-y-3">
+                <div v-for="(item, index) in [...ideas].sort((a,b) => b.votes - a.votes)" :key="item.id"
+                    class="flex justify-between items-center p-3 border-b-2 border-slate-100">
+                    <span class="font-bold text-lg">{{ index + 1 }}. {{ item.text }}</span>
+                    <span class="font-black text-blue-600 bg-blue-50 px-3 py-1 rounded-lg">{{ item.votes || 0 }} WINS</span>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <div v-else-if="roomData.status === 'voting' && !myWinner && !showSpotlight" class="text-center py-10">
+        <div class="flex flex-col md:flex-row items-center justify-center gap-8 mb-12">
           <button @click="selectWinner(currentKing)" 
-            class="w-full h-44 bg-gradient-to-br from-amber-500 to-orange-700 rounded-3xl shadow-2xl transform hover:scale-105 transition-all border-4 border-amber-300 relative overflow-hidden group">
-            <div class="absolute top-2 left-2 bg-amber-300 text-amber-900 text-[10px] px-2 py-0.5 rounded font-black tracking-tighter">CURRENT KING</div>
-            <span class="text-2xl font-bold text-white px-6 block group-hover:drop-shadow-md">{{ currentKing.text }}</span>
+            class="w-full md:w-64 h-48 border-[4px] border-black flex items-center justify-center text-3xl font-black rounded-3xl bg-white shadow-[10px_10px_0px_0px_rgba(0,0,0,1)] hover:bg-amber-50 active:shadow-none transition-all p-6">
+            {{ currentKing?.text }}
           </button>
-
-          <div class="text-5xl font-black italic text-slate-800 my-2">VS</div>
-
+          <span class="text-6xl font-black italic text-black/20">VS</span>
           <button @click="selectWinner(challenger)" 
-            class="w-full h-44 bg-gradient-to-br from-blue-600 to-indigo-800 rounded-3xl shadow-2xl transform hover:scale-105 transition-all border-4 border-blue-400 relative overflow-hidden group">
-            <div class="absolute top-2 left-2 bg-blue-300 text-blue-900 text-[10px] px-2 py-0.5 rounded font-black tracking-tighter">CHALLENGER</div>
-            <span class="text-2xl font-bold text-white px-6 block group-hover:drop-shadow-md">{{ challenger.text }}</span>
+            class="w-full md:w-64 h-48 border-[4px] border-black flex items-center justify-center text-3xl font-black rounded-3xl bg-white shadow-[10px_10px_0px_0px_rgba(0,0,0,1)] hover:bg-blue-50 active:shadow-none transition-all p-6">
+            {{ challenger?.text }}
           </button>
         </div>
-
-        <div class="mt-12 text-center text-slate-500 text-sm italic">
-          Remaining: {{ ideas.length - currentIndex - 1 }}
+        <div class="inline-block bg-black text-white px-8 py-2 rounded-full font-bold text-lg">
+            เหลืออีก : {{ ideas.length - currentIndex - 1 }} คู่
         </div>
       </div>
 
-      <div v-else-if="currentKing && !challenger && roomData.status !== 'finished'" class="text-center py-20 bg-slate-800 rounded-3xl border-4 border-dashed border-slate-700">
-        <h1 class="text-4xl font-black mb-4 text-yellow-400">🏆 FINAL WINNER</h1>
-        <p class="text-6xl font-bold mb-12 drop-shadow-lg text-white">{{ currentKing.text }}</p>
-        
-        <button @click="finishGame" class="px-10 py-4 bg-blue-600 rounded-full font-black text-xl hover:bg-blue-500 shadow-xl transition-all active:scale-95">
-          PUBLISH RESULTS TO ALL
-        </button>
+      <div v-if="showSpotlight" class="fixed inset-0 bg-[#81D8D0] z-50 flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in duration-300">
+        <h2 class="text-3xl font-black mb-4 animate-bounce">AND THE WINNER IS...</h2>
+        <div class="border-[8px] border-black p-12 text-6xl md:text-8xl font-black rounded-[50px] shadow-[20px_20px_0px_0px_rgba(0,0,0,1)] bg-white mb-8">
+          🏆 {{ myWinner?.text }}
+        </div>
+        <p class="text-xl font-bold italic text-black/40">กำลังบันทึกคะแนนใน {{ countdown }}...</p>
       </div>
 
-      <div v-else class="py-10">
-        <h2 class="text-3xl font-black text-center mb-10 text-yellow-400">🏆 FINAL RANKING</h2>
-        
-        <div class="grid gap-3">
-          <div v-for="(item, index) in [...ideas].sort((a,b) => b.votes - a.votes)" :key="item.id"
-            class="bg-slate-800 p-5 rounded-2xl flex justify-between items-center border border-slate-700 shadow-xl"
-            :class="{'border-yellow-500 ring-2 ring-yellow-500/20 scale-105': index === 0}"
-          >
-            <div class="flex items-center gap-5">
-              <span class="text-3xl font-black" :class="index === 0 ? 'text-yellow-400' : 'text-slate-600'">#{{ index + 1 }}</span>
-              <span class="text-xl font-bold">{{ item.text }}</span>
-            </div>
-            <div class="text-right">
-              <span class="text-blue-400 font-mono font-black text-xl">{{ item.votes }}</span>
-              <p class="text-[10px] text-slate-500 uppercase tracking-widest">Wins</p>
-            </div>
-          </div>
+      <div v-if="myWinner && !showSpotlight" class="text-center py-20">
+        <h2 class="text-4xl font-black mb-10 italic">Your Best Choice!</h2>
+        <div class="inline-block border-[6px] border-black p-12 text-6xl font-black rounded-[40px] shadow-[15px_15px_0px_0px_rgba(0,0,0,0.1)] bg-white/80 mb-16">
+          {{ myWinner?.text }}
         </div>
-
-        <button @click="resetRoom" class="mt-12 w-full text-slate-600 hover:text-red-500 text-sm underline transition">
-          Clear and Restart New Lobby
-        </button>
+        <div class="flex justify-center">
+            <button @click="resetBattle" class="font-black text-xl border-b-4 border-black hover:text-white transition-colors">โหวตใหม่อีกรอบ</button>
+        </div>
       </div>
 
     </div>
   </div>
 </template>
+
+<script setup>
+import { ref, onMounted, computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { db } from '../firebase'
+import { doc, collection, onSnapshot, addDoc, updateDoc, deleteDoc, increment, serverTimestamp, query, orderBy } from 'firebase/firestore'
+
+const route = useRoute()
+const router = useRouter()
+const roomId = route.params.id
+const myUserId = localStorage.getItem('voter_id')
+
+const roomData = ref({})
+const ideas = ref([])
+const newIdea = ref('')
+const myWinner = ref(null)
+const currentIndex = ref(1)
+const currentKing = ref(null)
+const showGlobalResults = ref(false)
+const showSpotlight = ref(false) // สถานะโชว์ผู้ชนะชั่วคราว
+const countdown = ref(3) // เวลานับถอยหลัง
+
+const isCreator = computed(() => roomData.value.creatorId === myUserId)
+
+onMounted(() => {
+  onSnapshot(doc(db, "rooms", roomId), (s) => {
+    if(!s.exists()) return router.push('/')
+    roomData.value = s.data()
+  })
+  onSnapshot(query(collection(db, "rooms", roomId, "ideas"), orderBy("createdAt", "asc")), (s) => {
+    ideas.value = s.docs.map(d => ({ id: d.id, ...d.data() }))
+  })
+})
+
+const addIdea = async () => {
+  if (!newIdea.value) return
+  await addDoc(collection(db, "rooms", roomId, "ideas"), { text: newIdea.value, votes: 0, createdAt: serverTimestamp() })
+  await updateDoc(doc(db, "rooms", roomId), { ideaCount: increment(1) })
+  newIdea.value = ''
+}
+
+const deleteIdea = async (id) => {
+  await deleteDoc(doc(db, "rooms", roomId, "ideas", id))
+  await updateDoc(doc(db, "rooms", roomId), { ideaCount: increment(-1) })
+}
+
+const editIdea = async (item) => {
+  const newText = prompt("แก้ไขตัวเลือก:", item.text)
+  if (newText) await updateDoc(doc(db, "rooms", roomId, "ideas", item.id), { text: newText })
+}
+
+const deleteRoom = async () => {
+  if (confirm("🚨 ลบห้องโหวตนี้ถาวร?")) {
+    await deleteDoc(doc(db, "rooms", roomId))
+    router.push('/')
+  }
+}
+
+const startBattle = () => {
+  if (ideas.value.length < 2) return alert("ต้องมีอย่างน้อย 2 ตัวเลือก")
+  roomData.value.status = 'voting'
+  currentKing.value = ideas.value[0]
+  currentIndex.value = 1
+  myWinner.value = null
+}
+
+const selectWinner = async (winner) => {
+  currentKing.value = winner
+  if (currentIndex.value < ideas.value.length - 1) {
+    currentIndex.value++
+  } else {
+    // โหมดจบการโหวต: โชว์ Spotlight
+    myWinner.value = winner
+    showSpotlight.value = true
+    
+    // เริ่มนับถอยหลัง 3 วิ
+    const timer = setInterval(() => {
+      countdown.value--
+      if (countdown.value <= 0) {
+        clearInterval(timer)
+        showSpotlight.value = false
+        finishVote(winner)
+      }
+    }, 1000)
+  }
+}
+
+const finishVote = async (winner) => {
+    const ideaRef = doc(db, "rooms", roomId, "ideas", winner.id)
+    await updateDoc(ideaRef, { votes: increment(1) })
+    await updateDoc(doc(db, "rooms", roomId), { voteCount: increment(1) })
+    countdown.value = 3 // รีเซ็ตตัวนับไว้ใช้รอบหน้า
+}
+
+const resetBattle = () => {
+    myWinner.value = null
+    roomData.value.status = 'open'
+}
+
+const challenger = computed(() => ideas.value[currentIndex.value])
+</script>
